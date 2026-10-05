@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "mobile-app",
+    "slug": "mobile-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#ffffff",
+      "resizeMode": "contain"
+    },
+    "android": {
+      "package": "com.mogotech.nammarketplace"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "60f5d9fd-b29f-4319-b505-0bfecf243925"
+      }
+    }
+  }
+}
