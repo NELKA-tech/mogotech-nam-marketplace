@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Linking, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Linking, StyleSheet, Alert, ActivityIndicator, Platform } from 'react-native';
 import client from '../api/client';
 
 export default function RegisterScreen({ onVerified }) {
@@ -11,21 +11,37 @@ export default function RegisterScreen({ onVerified }) {
   const [pendingVerification, setPendingVerification] = useState(null);
   const [isPolling, setIsPolling] = useState(false);
 
-  // Validate Namibian format client-side before API hit
+  // Clean digits and format to local 081...
+  const formatPhoneNumber = (num) => {
+    let cleaned = num.replace(/\D/g, '');
+    if (cleaned.startsWith('264')) {
+      cleaned = '0' + cleaned.slice(3);
+    }
+    return cleaned;
+  };
+
+  // Validate exact 10-digit Namibian mobile number
   const validateClientPhone = (num) => {
-    const cleaned = num.replace(/\D/g, '');
-    return cleaned.startsWith('081') || cleaned.startsWith('084') || cleaned.startsWith('085') ||
-           cleaned.startsWith('26481') || cleaned.startsWith('26484') || cleaned.startsWith('26485');
+    const cleaned = formatPhoneNumber(num);
+    const validPrefixes = ['081', '083', '084', '085'];
+    return cleaned.length === 10 && validPrefixes.some(prefix => cleaned.startsWith(prefix));
   };
 
   const handleRegister = async () => {
     if (!validateClientPhone(phone)) {
-      Alert.alert('Invalid Number', 'Registration is strictly for Namibian phone numbers (+264 81, 84, 85).');
+      Alert.alert('Invalid Number', 'Please enter a valid 10-digit Namibian phone number (e.g., 081 123 4567).');
       return;
     }
 
+    const cleanPhone = formatPhoneNumber(phone);
+
     try {
-      const res = await client.post('/auth/register', { phone, businessName, region, town });
+      const res = await client.post('/auth/register', { 
+        phone: cleanPhone, 
+        businessName, 
+        region, 
+        town 
+      });
       setPendingVerification(res.data);
       setIsPolling(true);
     } catch (err) {
@@ -37,7 +53,10 @@ export default function RegisterScreen({ onVerified }) {
     if (!pendingVerification) return;
     const { receiverNumber, verificationCode } = pendingVerification;
     const body = encodeURIComponent(`VERIFY ${verificationCode}`);
-    const smsUrl = `sms:${receiverNumber}?body=${body}`;
+    
+    // Use & for iOS and ? for Android SMS body separator
+    const separator = Platform.OS === 'ios' ? '&' : '?';
+    const smsUrl = `sms:${receiverNumber}${separator}body=${body}`;
 
     Linking.openURL(smsUrl).catch(() => {
       Alert.alert('Error', 'Unable to open native SMS app.');
@@ -48,9 +67,10 @@ export default function RegisterScreen({ onVerified }) {
   useEffect(() => {
     let timer;
     if (isPolling && pendingVerification) {
+      const targetPhone = pendingVerification.phone || formatPhoneNumber(phone);
       timer = setInterval(async () => {
         try {
-          const res = await client.get(`/auth/verification-status?phone=${pendingVerification.phone}`);
+          const res = await client.get(`/auth/verification-status?phone=${encodeURIComponent(targetPhone)}`);
           if (res.data.verified) {
             clearInterval(timer);
             setIsPolling(false);
@@ -67,8 +87,8 @@ export default function RegisterScreen({ onVerified }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.brand}>MogoTech Market</Text>
-      <Text style={styles.subtitle}>Strictly for Namibian Traders (+264)</Text>
+      <Text style={styles.brand}>Nam Marketplace</Text>
+      <Text style={styles.subtitle}>Buy and Sell Market for Namibian Traders (+264)</Text>
 
       {!pendingVerification ? (
         <>
