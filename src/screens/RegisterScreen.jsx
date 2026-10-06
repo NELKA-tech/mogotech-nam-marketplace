@@ -1,96 +1,84 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Linking, StyleSheet, Alert, ActivityIndicator, Platform } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import auth from '@react-native-firebase/auth';
 import client from '../api/client';
 
 export default function RegisterScreen({ onVerified }) {
   const [phone, setPhone] = useState('');
   const [businessName, setBusinessName] = useState('');
-  const [region, setRegion] = useState('Khomas');
   const [town, setTown] = useState('Windhoek');
   
-  const [pendingVerification, setPendingVerification] = useState(null);
-  const [isPolling, setIsPolling] = useState(false);
+  const [confirmResult, setConfirmResult] = useState(null);
+  const [otpCode, setOtpCode] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  // Clean digits and format to local 081...
-  const formatPhoneNumber = (num) => {
+  // Format local phone (081...) to international +264...
+  const formatInternationalPhone = (num) => {
     let cleaned = num.replace(/\D/g, '');
-    if (cleaned.startsWith('264')) {
-      cleaned = '0' + cleaned.slice(3);
+    if (cleaned.startsWith('0')) {
+      cleaned = '264' + cleaned.slice(1);
     }
-    return cleaned;
+    return '+' + cleaned;
   };
 
-  // Validate exact 10-digit Namibian mobile number
-  const validateClientPhone = (num) => {
-    const cleaned = formatPhoneNumber(num);
-    const validPrefixes = ['081', '083', '084', '085'];
-    return cleaned.length === 10 && validPrefixes.some(prefix => cleaned.startsWith(prefix));
-  };
+  // Step 1: Send SMS OTP via Firebase
+  const handleSendOTP = async () => {
+    const fullPhone = formatInternationalPhone(phone);
 
-  const handleRegister = async () => {
-    if (!validateClientPhone(phone)) {
-      Alert.alert('Invalid Number', 'Please enter a valid 10-digit Namibian phone number (e.g., 081 123 4567).');
+    if (fullPhone.length < 12) {
+      Alert.alert('Invalid Number', 'Please enter a valid 10-digit Namibian number (e.g., 081 123 4567).');
       return;
     }
 
-    const cleanPhone = formatPhoneNumber(phone);
-
+    setLoading(true);
     try {
-      const res = await client.post('/auth/register', { 
-        phone: cleanPhone, 
-        businessName, 
-        region, 
-        town 
+      const confirmation = await auth().signInWithPhoneNumber(fullPhone);
+      setConfirmResult(confirmation);
+      Alert.alert('SMS Sent', `Verification code sent to ${fullPhone}`);
+    } catch (error) {
+      Alert.alert('Firebase Error', error.message || 'Failed to send SMS code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 2: Confirm OTP & Save User to Supabase Backend
+  const handleVerifyOTP = async () => {
+    if (!otpCode || otpCode.length < 6) {
+      Alert.alert('Required', 'Please enter the 6-digit code received via SMS.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Confirm OTP code with Firebase
+      const userCredential = await confirmResult.confirm(otpCode);
+      const firebaseUser = userCredential.user;
+      const idToken = await firebaseUser.getIdToken();
+
+      // Send token and profile details to backend
+      const res = await client.post('/auth/firebase-register', {
+        idToken,
+        phone: formatInternationalPhone(phone),
+        businessName,
+        town,
       });
-      setPendingVerification(res.data);
-      setIsPolling(true);
-    } catch (err) {
-      Alert.alert('Error', err.response?.data?.error || 'Registration failed.');
+
+      Alert.alert('Success', 'Phone Number Verified!');
+      onVerified(res.data.token);
+    } catch (error) {
+      Alert.alert('Verification Failed', 'Invalid or expired SMS code.');
+    } finally {
+      setLoading(false);
     }
   };
-
-  const triggerSMSApp = () => {
-    if (!pendingVerification) return;
-    const { receiverNumber, verificationCode } = pendingVerification;
-    const body = encodeURIComponent(`VERIFY ${verificationCode}`);
-    
-    // Use & for iOS and ? for Android SMS body separator
-    const separator = Platform.OS === 'ios' ? '&' : '?';
-    const smsUrl = `sms:${receiverNumber}${separator}body=${body}`;
-
-    Linking.openURL(smsUrl).catch(() => {
-      Alert.alert('Error', 'Unable to open native SMS app.');
-    });
-  };
-
-  // Poll server every 3s to detect auto-verification after SMS sent
-  useEffect(() => {
-    let timer;
-    if (isPolling && pendingVerification) {
-      const targetPhone = pendingVerification.phone || formatPhoneNumber(phone);
-      timer = setInterval(async () => {
-        try {
-          const res = await client.get(`/auth/verification-status?phone=${encodeURIComponent(targetPhone)}`);
-          if (res.data.verified) {
-            clearInterval(timer);
-            setIsPolling(false);
-            Alert.alert('Success', 'Namibian Phone Number Verified!');
-            onVerified(res.data.token);
-          }
-        } catch (e) {
-          console.log('Polling check...');
-        }
-      }, 3000);
-    }
-    return () => clearInterval(timer);
-  }, [isPolling, pendingVerification]);
 
   return (
     <View style={styles.container}>
       <Text style={styles.brand}>Nam Marketplace</Text>
       <Text style={styles.subtitle}>Buy and Sell Market for Namibian Traders (+264)</Text>
 
-      {!pendingVerification ? (
+      {!confirmResult ? (
         <>
           <TextInput
             style={styles.input}
@@ -111,25 +99,24 @@ export default function RegisterScreen({ onVerified }) {
             value={town}
             onChangeText={setTown}
           />
-          <TouchableOpacity style={styles.button} onPress={handleRegister}>
-            <Text style={styles.buttonText}>Continue to Verification</Text>
+          <TouchableOpacity style={styles.button} onPress={handleSendOTP} disabled={loading}>
+            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Send SMS Code</Text>}
           </TouchableOpacity>
         </>
       ) : (
         <View style={styles.verifyBox}>
-          <Text style={styles.infoText}>
-            Tap below to send a free verification text using your MTC / TN Mobile Aweh bundle.
-          </Text>
-          <TouchableOpacity style={styles.smsButton} onPress={triggerSMSApp}>
-            <Text style={styles.buttonText}>Verify via SMS (N$ 0.00)</Text>
+          <Text style={styles.infoText}>Enter the 6-digit SMS code sent to your phone:</Text>
+          <TextInput
+            style={styles.codeInput}
+            placeholder="123456"
+            keyboardType="number-pad"
+            maxLength={6}
+            value={otpCode}
+            onChangeText={setOtpCode}
+          />
+          <TouchableOpacity style={styles.button} onPress={handleVerifyOTP} disabled={loading}>
+            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Verify & Complete Registration</Text>}
           </TouchableOpacity>
-
-          {isPolling && (
-            <View style={styles.pollingContainer}>
-              <ActivityIndicator size="small" color="#0072C6" />
-              <Text style={styles.pollingText}>Awaiting SMS verification from +264 network...</Text>
-            </View>
-          )}
         </View>
       )}
     </View>
@@ -141,11 +128,9 @@ const styles = StyleSheet.create({
   brand: { fontSize: 28, fontWeight: 'bold', color: '#0072C6', textAlign: 'center' },
   subtitle: { fontSize: 14, color: '#6C757D', textAlign: 'center', marginBottom: 30 },
   input: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CED4DA', padding: 14, borderRadius: 8, marginBottom: 16 },
-  button: { backgroundColor: '#0072C6', padding: 16, borderRadius: 8, alignItems: 'center' },
-  smsButton: { backgroundColor: '#28A745', padding: 16, borderRadius: 8, alignItems: 'center', marginVertical: 16 },
+  button: { backgroundColor: '#0072C6', padding: 16, borderRadius: 8, alignItems: 'center', width: '100%' },
   buttonText: { color: '#FFF', fontWeight: 'bold', fontSize: 16 },
-  verifyBox: { alignItems: 'center' },
-  infoText: { textAlign: 'center', fontSize: 15, color: '#333', lineHeight: 22 },
-  pollingContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 20 },
-  pollingText: { marginLeft: 10, color: '#6C757D', fontSize: 13 }
+  verifyBox: { alignItems: 'center', width: '100%' },
+  infoText: { textAlign: 'center', fontSize: 15, color: '#333', marginBottom: 16 },
+  codeInput: { backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CED4DA', padding: 14, borderRadius: 8, marginBottom: 16, textAlign: 'center', fontSize: 22, letterSpacing: 6, width: '100%' },
 });

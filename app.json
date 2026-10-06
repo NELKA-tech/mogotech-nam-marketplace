@@ -10,7 +10,8 @@
       "resizeMode": "contain"
     },
     "android": {
-      "package": "com.mogotech.nammarketplace"
+      "package": "com.mogotech.nammarketplace",
+      "googleServicesFile": "./google-services.json"
     },
     "extra": {
       "eas": {
