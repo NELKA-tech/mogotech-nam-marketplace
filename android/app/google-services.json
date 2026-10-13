@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "328308342114",
+    "project_id": "nam-marketplace",
+    "storage_bucket": "nam-marketplace.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:328308342114:android:57d3e127411d49bfdb403b",
+        "android_client_info": {
+          "package_name": "com.mogotech.nammarketplace"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBYgT9n7mbPtlXABLjoIzmJaLUEA5H_k_s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
