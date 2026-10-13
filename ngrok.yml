@@ -1,0 +1,7 @@
+version: "2"
+authtoken: 3KE6JRvn3VrFp1NWmV9BcrRF8ZN_79mEUp1fLshJG4stRvdW6
+tunnels:
+  backend:
+    proto: http
+    addr: 5000
+    domain: ascension-acre-granddad.ngrok-free.dev
